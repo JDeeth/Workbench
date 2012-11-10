@@ -95,7 +95,9 @@ void setupTunerDataref() {
 int tunerMode = NAV1; // indicates selected channel
 
 void tunerDisplayUpdate();
-void tunerInputUpdate(int modeDelta, int leftDelta, int rightDelta);
+void tunerInputUpdate(const int &modeDelta,
+                      const int &leftDelta,
+                      const int &rightDelta);
 
 ////////////////////////////////////////////////////////////////////////
 // Knob-adjusting objects
@@ -118,6 +120,24 @@ public:
   Knob(float low, float high, float sc, float ratio, bool lap = false) {
     set(low, high, sc, ratio, lap);
   }
+
+  void addDelta(int fineDelta, int coarseDelta = 0) {
+    float delta = fineDelta + coarseDelta * coarseToFineRatio;
+    delta *= scalar;
+    delta += dr;
+    if(lapNotCrop) {
+      while (delta >= highLimit)
+        delta -= (highLimit - lowLimit);
+      while (delta < lowLimit)
+        delta += (highLimit - lowLimit);
+    } else {
+      if (delta > highLimit)
+        delta = highLimit;
+      if (delta < lowLimit)
+        delta = lowLimit;
+    }
+    dr = delta;
+  }
 };
 
 enum KNOB_MODES {
@@ -135,6 +155,10 @@ void setupKnobDataref() {
   nav1Obs.dr = XPlaneRef("sim/cockpit2/radios/actuators/nav1_obs_deg_mag_pilot");
 }
 
+void knobDisplayUpdate();
+void knobInputUpdate(const int &modeDelta,
+                     const int &leftDelta,
+                     const int &rightDelta);
 
 ////////////////////////////////////////////////////////////////////////
 // Local objects
@@ -146,8 +170,8 @@ enum META_MODE {
 
 int metaMode = 0;
 
-elapsedMillis dispTimer = 0; //to avoid updating display too frequently
-unsigned int dispPeriod = 40;
+elapsedMicros dispTimer = 0; //to avoid updating display too frequently
+unsigned int dispPeriod = 35525; //magic number determined by experimentation
 
 
 
@@ -166,7 +190,14 @@ void loopOmniTune() {
 
   if (dispTimer > dispPeriod) {
     dispTimer = 0;
-    showDisplay = FlightSim.isEnabled();
+    if (FlightSim.isEnabled()) {
+      showDisplay = true;
+      analogWrite(BACKLIGHT, 128);
+    } else {
+      lcd.clear();
+      lcd.print("OmniStuff");
+      analogWrite(BACKLIGHT, 0);
+    }
   }
 
 
@@ -189,11 +220,11 @@ void loopOmniTune() {
   }
 
   short modeDelta = 0;
-  if (leftIn.fallingEdge()) {
-    --modeDelta;
+  if (leftIn.risingEdge()) {
+    modeDelta = -1;
   }
-  if (rightIn.fallingEdge()) {
-    ++modeDelta;
+  if (rightIn.risingEdge()) {
+    modeDelta = 1;
   }
 
   short leftDelta = (leftEnc.read() - leftEncPrev) / ENC_CHANGE_PER_DETENT;
@@ -216,34 +247,79 @@ void loopOmniTune() {
       break;
 
     case KNOB:
-      if(showDisplay) {
-        lcd.clear();
-        lcd.setCursor(0,0);
-        lcd.print("Knob mode");
-      }
+      knobInputUpdate(modeDelta, leftDelta, rightDelta);
+      if(showDisplay)
+        knobDisplayUpdate();
       break;
   }
+}
 
-  if(0) {
-    lcd.print("SimElectronics. ");
-    lcd.setCursor (0, 1);
-    lcd.print(" WordPress.com  ");
+
+
+
+void knobInputUpdate(const int &modeDelta,
+                     const int &leftDelta,
+                     const int &rightDelta) {
+  if (modeDelta) {
+    knobMode += modeDelta;
+    if (knobMode >= KNOB_MODE_COUNT)
+      knobMode -= KNOB_MODE_COUNT;
+    if(knobMode < 0)
+      knobMode += KNOB_MODE_COUNT;
+  }
+
+  switch(knobMode) {
+    case HEADING_P1:
+      headingP1.addDelta(rightDelta, leftDelta);
+      break;
+    case NAV1_OBS:
+      nav1Obs.addDelta(rightDelta, leftDelta);
+      break;
   }
 }
+
+
+
+
+
+void knobDisplayUpdate() {
+  lcd.clear();
+  lcd.setCursor(0, 0);
+
+  switch (knobMode) {
+    case HEADING_P1:
+      lcd.print("Heading P1");
+      lcd.setCursor(0,1);
+      lcd.print(headingP1.dr);
+      break;
+    case NAV1_OBS:
+      lcd.print("NAV1 OBS");
+      lcd.setCursor(0,1);
+      lcd.print(nav1Obs.dr);
+      break;
+    default:
+      lcd.print("Undefined");
+  }
+}
+
+
+
 
 
 
 ////////////////////////////////////////////////////////////////////////
 // Tuner-mode input update
 //
-void tunerInputUpdate(int modeDelta, int leftDelta, int rightDelta) {
+void tunerInputUpdate(const int &modeDelta,
+                      const int &leftDelta,
+                      const int &rightDelta) {
 
-  if(modeDelta) {
+  if (modeDelta) {
     tunerMode += modeDelta;
-    while (tunerMode < 0)
-      tunerMode += TUNER_MODE_COUNT;
-    while (tunerMode >= TUNER_MODE_COUNT)
+    if (tunerMode >= TUNER_MODE_COUNT)
       tunerMode -= TUNER_MODE_COUNT;
+    if (tunerMode < 0)
+      tunerMode += TUNER_MODE_COUNT;
   }
 
   // tune frequencies if either encoder has been turned

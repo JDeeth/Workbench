@@ -24,20 +24,14 @@
 #include <Bounce.h>
 #include <Encoder.h>
 
-//#define DataRefIdent PROGMEM const char
-
 #include "OmniTune.h"
 #include "GearLights.h"
-
-
 
 void setup() {
   setupGearLights();
 
   setupOmniTune();
 }
-
-
 
 void loop() {
   FlightSim.update();
@@ -47,6 +41,3 @@ void loop() {
   loopOmniTune();
 
 } // loop
-
-
-
