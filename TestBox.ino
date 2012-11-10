@@ -32,13 +32,9 @@
 
 
 void setup() {
-  setupInput();
-  setupOutput();
-  setupDataref();
-
   setupGearLights();
 
-  pinMode(LED_BUILTIN, OUTPUT);
+  setupOmniTune();
 }
 
 
@@ -48,21 +44,8 @@ void loop() {
 
   loopGearLights();
 
-  leftIn.update();
-  rightIn.update();
+  loopOmniTune();
 
-  radioInputUpdate();
-
-  if (dispTimer > dispPeriod) {
-    dispTimer = 0;
-    if(FlightSim.isEnabled())
-      radioDisplayUpdate();
-    else {
-      lcd.print("SimElectronics. ");
-      lcd.setCursor (0, 1);
-      lcd.print(" WordPress.com  ");
-    }
-  }
 } // loop
 
 

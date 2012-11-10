@@ -16,7 +16,7 @@ enum LCD_PINS {
 
 LiquidCrystalFast lcd(RS, RW, EN, D4, D5, D6, D7);
 
-void setupOutput() {
+void setupOmnituneOutput() {
   pinMode (BACKLIGHT, OUTPUT);
   analogWrite (BACKLIGHT, 128);
 
@@ -48,7 +48,7 @@ const short ENC_CHANGE_PER_DETENT = 4; // may be 1, 2, or 4 depending on model
 short leftEncPrev;  // position of encoders when last inspected
 short rightEncPrev;
 
-void setupInput () {
+void setupOmnituneInput () {
   pinMode (PIN_LEFT_ENC_A, INPUT_PULLUP);
   pinMode (PIN_LEFT_ENC_B, INPUT_PULLUP);
   pinMode (PIN_LEFT_IN, INPUT_PULLUP);
@@ -59,15 +59,15 @@ void setupInput () {
 
 
 
-///////////////////////////////////////////////////////////////////////////////
-// X-Plane objects
+////////////////////////////////////////////////////////////////////////
+// Radio tuner objects
 //
-enum TUNER_DATAREF_NAMES {
+enum TUNER_MODES {
   NAV1, NAV2, COM1, COM2, ADF1, ADF2, XP_MODE, XP_CODE,
-  TUNER_DATAREF_COUNT
+  TUNER_MODE_COUNT
 };
 
-
+// transponder modes
 enum XP_MODES {
   XP_OFF, XP_STBY, XP_ON, XP_ALT, XP_TEST,
   XP_MODE_COUNT
@@ -84,92 +84,190 @@ DataRefIdent tunerDataRefIdent[][64] = {
   {"sim/cockpit/radios/transponder_mode"}
 };
 
-FlightSimInteger tunerDataRef[TUNER_DATAREF_COUNT];
+FlightSimInteger tunerDataRef[TUNER_MODE_COUNT];
 
-void setupDataref() {
-  for (int i = 0; i <= TUNER_DATAREF_COUNT; ++i) {
+void setupTunerDataref() {
+  for (int i = 0; i < TUNER_MODE_COUNT; ++i) {
     tunerDataRef[i].assign((const _XpRefStr_ *) &tunerDataRefIdent[i][0]);
   }
-//  tunerDataRef[NAV1] = XPlaneRef("sim/cockpit2/radios/actuators/nav1_frequency_hz");
-//  tunerDataRef[NAV2] = XPlaneRef("sim/cockpit2/radios/actuators/nav2_frequency_hz");
-//  tunerDataRef[COM1] = XPlaneRef("sim/cockpit2/radios/actuators/com1_frequency_hz");
-//  tunerDataRef[COM2] = XPlaneRef("sim/cockpit2/radios/actuators/com2_frequency_hz");
-//  tunerDataRef[ADF1] = XPlaneRef("sim/cockpit2/radios/actuators/adf1_frequency_hz");
-//  tunerDataRef[ADF2] = XPlaneRef("sim/cockpit2/radios/actuators/adf2_frequency_hz");
-//  tunerDataRef[XP_CODE] = XPlaneRef("sim/cockpit2/radios/actuators/transponder_code");
-//  tunerDataRef[XP_MODE] = XPlaneRef("sim/cockpit/radios/transponder_mode");
+}
+
+int tunerMode = NAV1; // indicates selected channel
+
+void tunerDisplayUpdate();
+void tunerInputUpdate(int modeDelta, int leftDelta, int rightDelta);
+
+////////////////////////////////////////////////////////////////////////
+// Knob-adjusting objects
+//
+class Knob {
+public:
+  FlightSimFloat dr;
+  float lowLimit;
+  float highLimit;
+  float scalar;
+  int coarseToFineRatio;
+  bool lapNotCrop;
+  void set(float low, float high, float sc, float ratio, bool lap = false) {
+    lowLimit = low;
+    highLimit = high;
+    scalar = sc;
+    coarseToFineRatio = ratio;
+    lapNotCrop = lap;
+  }
+  Knob(float low, float high, float sc, float ratio, bool lap = false) {
+    set(low, high, sc, ratio, lap);
+  }
+};
+
+enum KNOB_MODES {
+  HEADING_P1, NAV1_OBS,// NAV2_OBS,
+  KNOB_MODE_COUNT
+};
+
+Knob headingP1(0.0, 360.0, 0.25, 20, true);
+Knob nav1Obs(0.0, 360.0, 0.25, 20, true);
+
+int knobMode = HEADING_P1;
+
+void setupKnobDataref() {
+  headingP1.dr = XPlaneRef("sim/cockpit2/autopilot/heading_dial_deg_mag_pilot");
+  nav1Obs.dr = XPlaneRef("sim/cockpit2/radios/actuators/nav1_obs_deg_mag_pilot");
 }
 
 
-
-///////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////
 // Local objects
 //
-short channel = NAV1; // indicates selected channel
+enum META_MODE {
+  TUNER, KNOB,
+  META_MODE_COUNT
+};
 
-void radioDisplayUpdate();
-void radioInputUpdate();
+int metaMode = 0;
 
 elapsedMillis dispTimer = 0; //to avoid updating display too frequently
 unsigned int dispPeriod = 40;
 
 
 
+void setupOmniTune() {
+  setupOmnituneInput();
+  setupOmnituneOutput();
+  setupTunerDataref();
+  setupKnobDataref();
+}
+
+
+
+void loopOmniTune() {
+
+  bool showDisplay = false;
+
+  if (dispTimer > dispPeriod) {
+    dispTimer = 0;
+    showDisplay = FlightSim.isEnabled();
+  }
+
+
+
+
+  leftIn.update();
+  rightIn.update();
+
+
+  if ((leftIn.read() == LOW) && rightIn.fallingEdge()) {
+    ++metaMode;
+    if (metaMode >= META_MODE_COUNT)
+      metaMode = 0;
+  }
+
+  if ((rightIn.read() == LOW) && leftIn.fallingEdge()) {
+    --metaMode;
+    if (metaMode < 0)
+      metaMode = META_MODE_COUNT - 1;
+  }
+
+  short modeDelta = 0;
+  if (leftIn.fallingEdge()) {
+    --modeDelta;
+  }
+  if (rightIn.fallingEdge()) {
+    ++modeDelta;
+  }
+
+  short leftDelta = (leftEnc.read() - leftEncPrev) / ENC_CHANGE_PER_DETENT;
+  if (leftDelta) {
+    leftEncPrev = 0;
+    leftEnc.write(0);
+  }
+
+  short rightDelta = (rightEnc.read() - rightEncPrev) / ENC_CHANGE_PER_DETENT;
+  if (rightDelta) {
+    rightEncPrev = 0;
+    rightEnc.write(0);
+  }
+
+  switch(metaMode) {
+    case TUNER:
+      tunerInputUpdate(modeDelta, leftDelta, rightDelta);
+      if(showDisplay)
+        tunerDisplayUpdate();
+      break;
+
+    case KNOB:
+      if(showDisplay) {
+        lcd.clear();
+        lcd.setCursor(0,0);
+        lcd.print("Knob mode");
+      }
+      break;
+  }
+
+  if(0) {
+    lcd.print("SimElectronics. ");
+    lcd.setCursor (0, 1);
+    lcd.print(" WordPress.com  ");
+  }
+}
+
 
 
 ////////////////////////////////////////////////////////////////////////
 // Tuner-mode input update
 //
-void radioInputUpdate() {
+void tunerInputUpdate(int modeDelta, int leftDelta, int rightDelta) {
 
-  if(leftIn.fallingEdge()) {     // when left encoder pressed
-    --channel;                   // select previous channel
-    while (channel < 0)          // if there's no previous channel,
-      channel += TUNER_DATAREF_COUNT;  // go to the last channel.
-  }
-
-  if(rightIn.fallingEdge()) {    // when right encoder pressed
-    ++channel;                   // select next channel
-    while (channel >= TUNER_DATAREF_COUNT)
-      channel -= TUNER_DATAREF_COUNT;  // when we go past the last, go back to the first
-  }
-
-  short leftEncDiff = (leftEnc.read() - leftEncPrev) / ENC_CHANGE_PER_DETENT;
-  short rightEncDiff = (rightEnc.read() - rightEncPrev) / ENC_CHANGE_PER_DETENT;
-
-  // reset encoders if they've been turned
-  if (leftEncDiff) {
-    leftEnc.write(0); //substitute leftEnc.write(0) when real encoders are used
-    leftEncPrev = 0;
-  }
-
-  if (rightEncDiff) {
-    rightEnc.write(0);
-    rightEncPrev = 0;
+  if(modeDelta) {
+    tunerMode += modeDelta;
+    while (tunerMode < 0)
+      tunerMode += TUNER_MODE_COUNT;
+    while (tunerMode >= TUNER_MODE_COUNT)
+      tunerMode -= TUNER_MODE_COUNT;
   }
 
   // tune frequencies if either encoder has been turned
-  if (leftEncDiff || rightEncDiff) {
+  if (leftDelta || rightDelta) {
 
-    int freq = tunerDataRef[channel];
+    int freq = tunerDataRef[tunerMode];
 
-    switch (channel) { // tune selected channel
+    switch (tunerMode) { // tune selected channel
 
       case NAV1:
       case NAV2:
-        if (leftEncDiff) {
+        if (leftDelta) {
           // TUNE HI. Increment in megaherts, which is freq * 100
-          freq += leftEncDiff * 100;
+          freq += leftDelta * 100;
           // lap to 108-118MHz range
           while (freq < 10800) freq += 1000;
           while (freq >= 11800) freq -= 1000;
         }
-        if (rightEncDiff) { //TUNE LO. Increment in decaKHz
+        if (rightDelta) { //TUNE LO. Increment in decaKHz
           //remove MHz element from freq, leaving decaKHz element
           int mhz = freq / 100;
           freq -= mhz * 100;
           //increment freq in 50KHz (0.05MHz) steps
-          freq += rightEncDiff * 5;
+          freq += rightDelta * 5;
           //crop freq to prevent TUNE LO mode from changing TUNE HI digits
           while (freq < 0) freq += 100;
           while (freq >= 100) freq -= 100;
@@ -180,13 +278,13 @@ void radioInputUpdate() {
 
       case COM1:
       case COM2:
-        if (leftEncDiff) {//TUNE HI.
-          freq += leftEncDiff * 100;
+        if (leftDelta) {//TUNE HI.
+          freq += leftDelta * 100;
           // lap to 118.00 - 136.00
           while (freq <  11800) freq += 1800;
           while (freq >= 13600) freq -= 1800;
         }
-        if (rightEncDiff) { //TUNE LO
+        if (rightDelta) { //TUNE LO
           //remove megahertz from freq (digits left of decimal point)
           int mhz = freq / 100;
           freq -= mhz * 100;
@@ -198,7 +296,7 @@ void radioInputUpdate() {
             ffreq += 0.5; 						// then reinstate missing 5KHz
           }
           //increment in 25KHz steps
-          ffreq += rightEncDiff * 2.5;
+          ffreq += rightDelta * 2.5;
           //convert back to integers (c++ drops the trailing .5 if necessary)
           freq = ffreq;
           //keep freq between 0 and <100 so this operation doesn't affect digits left of decimal point
@@ -211,11 +309,11 @@ void radioInputUpdate() {
 
       case ADF1:
       case ADF2:
-        if (leftEncDiff) { // alter first two digits
-          freq += leftEncDiff * 10;
+        if (leftDelta) { // alter first two digits
+          freq += leftDelta * 10;
         }
-        if (rightEncDiff) { // alter third digit
-          freq += rightEncDiff;
+        if (rightDelta) { // alter third digit
+          freq += rightDelta;
         }
         if (freq < 190) freq = 190;
         if (freq >= 600) freq = 600;
@@ -233,9 +331,9 @@ void radioInputUpdate() {
           dgt[2] = (freq - 100 * (freq/100) ) / 10;
           dgt[3] = freq - 10 * (freq/10);
 
-          if (channel == XP_CODE) {
+          if (tunerMode == XP_CODE) {
 
-            dgt[1] += leftEncDiff;
+            dgt[1] += leftDelta;
 
             if (dgt[1] < 0) {
               dgt[1] = 7;
@@ -251,7 +349,7 @@ void radioInputUpdate() {
                 dgt[0] = 0;
             }
 
-            dgt[3] += rightEncDiff;
+            dgt[3] += rightDelta;
 
             if (dgt[3] < 0) {
               dgt[3] = 7;
@@ -276,8 +374,8 @@ void radioInputUpdate() {
         break;
 
       case XP_MODE:
-        freq += leftEncDiff;
-        freq += rightEncDiff;
+        freq += leftDelta;
+        freq += rightDelta;
         if (freq < 0)
           freq = 0;
         if (freq >= XP_MODE_COUNT)
@@ -286,17 +384,17 @@ void radioInputUpdate() {
 
     } // switch, tune selected channel
 
-    tunerDataRef[channel] = freq;
+    tunerDataRef[tunerMode] = freq;
   }
-
 }
+
 
 ///////////////////////////////////////////////////////////////////////////////
 // Tuner-mode Display Update
 //
 // Reads datarefs and draws selected channels onto display
 //
-void radioDisplayUpdate() {
+void tunerDisplayUpdate() {
 
   /////////////////
   // Set up display
@@ -309,13 +407,13 @@ void radioDisplayUpdate() {
   //
   float tmp; // for putting decimal point into integer dataref frequencies
 
-  switch (channel) { // print selected channels
+  switch (tunerMode) { // print selected channels
     case NAV1:
     case NAV2:
     case XP_CODE:
     case XP_MODE:
       lcd.print("NAV1");
-      if (channel == NAV1)
+      if (tunerMode == NAV1)
         lcd.print(">");
       lcd.setCursor(5, 0);
       tmp = tunerDataRef[NAV1] / 100.0;
@@ -323,7 +421,7 @@ void radioDisplayUpdate() {
 
       lcd.setCursor(0, 1);
       lcd.print("NAV2");
-      if (channel == NAV2)
+      if (tunerMode == NAV2)
         lcd.print(">");
       lcd.setCursor(5, 1);
       tmp = tunerDataRef[NAV2] / 100.0;
@@ -333,7 +431,7 @@ void radioDisplayUpdate() {
     case COM1:
     case COM2:
       lcd.print("COM1");
-      if (channel == COM1)
+      if (tunerMode == COM1)
         lcd.print(">");
       lcd.setCursor(5, 0);
       tmp = tunerDataRef[COM1] / 100.0;
@@ -341,7 +439,7 @@ void radioDisplayUpdate() {
 
       lcd.setCursor(0, 1);
       lcd.print("COM2");
-      if (channel == COM2)
+      if (tunerMode == COM2)
         lcd.print(">");
       lcd.setCursor(5, 1);
       tmp = tunerDataRef[COM2] / 100.0;
@@ -351,14 +449,14 @@ void radioDisplayUpdate() {
     case ADF1:
     case ADF2:
       lcd.print("ADF1");
-      if (channel == ADF1)
+      if (tunerMode == ADF1)
         lcd.print(">");
       lcd.setCursor(5, 0);
       lcd.print(tunerDataRef[ADF1]);
 
       lcd.setCursor(0, 1);
       lcd.print("ADF2");
-      if (channel == ADF2)
+      if (tunerMode == ADF2)
         lcd.print(">");
       lcd.setCursor(5, 1);
       lcd.print(tunerDataRef[ADF2]);
@@ -411,7 +509,7 @@ void radioDisplayUpdate() {
   /////////////////
   // Transponder selection indication
   //
-  switch(channel) {
+  switch(tunerMode) {
     case XP_CODE:
       lcd.setCursor(11, 1);
       lcd.print(">");
