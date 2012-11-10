@@ -141,18 +141,20 @@ public:
 };
 
 enum KNOB_MODES {
-  HEADING_P1, NAV1_OBS,// NAV2_OBS,
+  HEADING_P1, NAV1_OBS, VSI_BUG,
   KNOB_MODE_COUNT
 };
 
-Knob headingP1(0.0, 360.0, 0.25, 20, true);
-Knob nav1Obs(0.0, 360.0, 0.25, 20, true);
+Knob headingP1 (0.0, 360.0, 0.25, 20, true);
+Knob nav1Obs (0.0, 360.0, 0.25, 20, true);
+Knob vsiBug (-6000, 6000, 100, 5);
 
 int knobMode = HEADING_P1;
 
 void setupKnobDataref() {
   headingP1.dr = XPlaneRef("sim/cockpit2/autopilot/heading_dial_deg_mag_pilot");
   nav1Obs.dr = XPlaneRef("sim/cockpit2/radios/actuators/nav1_obs_deg_mag_pilot");
+  vsiBug.dr = XPlaneRef("sim/cockpit2/autopilot/vvi_dial_fpm");
 }
 
 void knobDisplayUpdate();
@@ -275,6 +277,9 @@ void knobInputUpdate(const int &modeDelta,
     case NAV1_OBS:
       nav1Obs.addDelta(rightDelta, leftDelta);
       break;
+    case VSI_BUG:
+      vsiBug.addDelta(rightDelta, leftDelta);
+      break;
   }
 }
 
@@ -296,6 +301,11 @@ void knobDisplayUpdate() {
       lcd.print("NAV1 OBS");
       lcd.setCursor(0,1);
       lcd.print(nav1Obs.dr);
+      break;
+    case VSI_BUG:
+      lcd.print("VSI Bug");
+      lcd.setCursor(0,1);
+      lcd.print(vsiBug.dr);
       break;
     default:
       lcd.print("Undefined");
