@@ -26,12 +26,12 @@
 
 #include "EncoderLCD.h"
 #include "OmniTune.h"
+#include "DialController.h"
 #include "GearLights.h"
 
 void setup() {
   setupEncoderLCD();
   setupGearLights();
-  setupOmniTune();
 }
 
 void loop() {

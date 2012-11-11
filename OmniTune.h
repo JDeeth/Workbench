@@ -1,15 +1,21 @@
 #ifndef OMNITUNE_H
 #define OMNITUNE_H
 
+
+// so we can put idents at global scope, instead of in setup()
 #define DataRefIdent PROGMEM const char
 
-////////////////////////////////////////////////////////////////////////
-// Radio tuner objects
+
+
+////////////////////
+// OmniTune modes
 //
 enum TUNER_MODES {
   NAV1, NAV2, COM1, COM2, ADF1, ADF2, XP_MODE, XP_CODE,
   TUNER_MODE_COUNT
 };
+int tunerMode = NAV1; // indicates selected channel
+
 
 // transponder modes
 enum XP_MODES {
@@ -17,6 +23,8 @@ enum XP_MODES {
   XP_MODE_COUNT
 };
 
+
+// Datarefs used by OmniTune
 DataRefIdent tunerDataRefIdent[][64] = {
   {"sim/cockpit2/radios/actuators/nav1_frequency_hz"},
   {"sim/cockpit2/radios/actuators/nav2_frequency_hz"},
@@ -30,148 +38,18 @@ DataRefIdent tunerDataRefIdent[][64] = {
 
 FlightSimInteger tunerDataRef[TUNER_MODE_COUNT];
 
-void setupTunerDataref() {
+void setupOmniTuneDataref() {
   for (int i = 0; i < TUNER_MODE_COUNT; ++i) {
     tunerDataRef[i].assign((const _XpRefStr_ *) &tunerDataRefIdent[i][0]);
   }
 }
-
-int tunerMode = NAV1; // indicates selected channel
-
-////////////////////////////////////////////////////////////////////////
-// Dial-adjusting objects
-//
-class Dial {
-public:
-  FlightSimFloat dr;
-  float lowLimit;
-  float highLimit;
-  float scalar;
-  int coarseToFineRatio;
-  bool lapNotCrop;
-  void set(float low, float high, float sc, float ratio, bool lap = false) {
-    lowLimit = low;
-    highLimit = high;
-    scalar = sc;
-    coarseToFineRatio = ratio;
-    lapNotCrop = lap;
-  }
-  Dial(float low, float high, float sc, float ratio, bool lap = false) {
-    set(low, high, sc, ratio, lap);
-  }
-
-  void addDelta(int fineDelta, int coarseDelta = 0) {
-    float delta = fineDelta + coarseDelta * coarseToFineRatio;
-    delta *= scalar;
-    delta += dr;
-    if(lapNotCrop) {
-      while (delta >= highLimit)
-        delta -= (highLimit - lowLimit);
-      while (delta < lowLimit)
-        delta += (highLimit - lowLimit);
-    } else {
-      if (delta > highLimit)
-        delta = highLimit;
-      if (delta < lowLimit)
-        delta = lowLimit;
-    }
-    dr = delta;
-  }
-};
-
-enum DIAL_MODES {
-  HEADING_P1, NAV1_OBS, VSI_BUG,
-  DIAL_MODE_COUNT
-};
-
-Dial headingP1 (0.0, 360.0, 0.25, 20, true);
-Dial nav1Obs (0.0, 360.0, 0.25, 20, true);
-Dial vsiBug (-6000, 6000, 100, 5);
-
-int dialMode = HEADING_P1;
-
-void setupKnobDataref() {
-  headingP1.dr = XPlaneRef("sim/cockpit2/autopilot/heading_dial_deg_mag_pilot");
-  nav1Obs.dr = XPlaneRef("sim/cockpit2/radios/actuators/nav1_obs_deg_mag_pilot");
-  vsiBug.dr = XPlaneRef("sim/cockpit2/autopilot/vvi_dial_fpm");
-}
-
-////////////////////////////////////////////////////////////////////////
-// Local objects
-//
-
-
-void setupOmniTune() {
-  setupTunerDataref();
-  setupKnobDataref();
-}
-
-
-
-void dialInputUpdate(const int &modeDelta,
-                     const int &leftDelta,
-                     const int &rightDelta) {
-  if (modeDelta) {
-    dialMode += modeDelta;
-    if (dialMode >= DIAL_MODE_COUNT)
-      dialMode -= DIAL_MODE_COUNT;
-    if(dialMode < 0)
-      dialMode += DIAL_MODE_COUNT;
-  }
-
-  if (leftDelta || rightDelta) {
-  switch(dialMode) {
-    case HEADING_P1:
-      headingP1.addDelta(rightDelta, leftDelta);
-      break;
-    case NAV1_OBS:
-      nav1Obs.addDelta(rightDelta, leftDelta);
-      break;
-    case VSI_BUG:
-      vsiBug.addDelta(rightDelta, leftDelta);
-      break;
-  }
-  } // if enc input
-}
-
-
-
-
-
-void dialDisplayUpdate() {
-  lcd.clear();
-  lcd.setCursor(0, 0);
-
-  switch (dialMode) {
-    case HEADING_P1:
-      lcd.print("Heading P1");
-      lcd.setCursor(0,1);
-      lcd.print(headingP1.dr);
-      break;
-    case NAV1_OBS:
-      lcd.print("NAV1 OBS");
-      lcd.setCursor(0,1);
-      lcd.print(nav1Obs.dr);
-      break;
-    case VSI_BUG:
-      lcd.print("VSI Bug");
-      lcd.setCursor(0,1);
-      lcd.print(vsiBug.dr);
-      break;
-    default:
-      lcd.print("Undefined");
-  }
-}
-
-
-
 
 
 
 ////////////////////////////////////////////////////////////////////////
 // Tuner-mode input update
 //
-void tunerInputUpdate(const int &modeDelta,
+void updateOmniTuneInput(const int &modeDelta,
                       const int &leftDelta,
                       const int &rightDelta) {
 
@@ -331,7 +209,7 @@ void tunerInputUpdate(const int &modeDelta,
 //
 // Reads datarefs and draws selected channels onto display
 //
-void tunerDisplayUpdate() {
+void updateOmniTuneDisplay() {
 
   /////////////////
   // Set up display
@@ -458,6 +336,5 @@ void tunerDisplayUpdate() {
   } // switch, transponder selection indicator
 
 } // radioDisplayUpdate
-
 
 #endif

@@ -5,7 +5,8 @@ HEADERS += \
     TestBox.ino \
     GearLights.h \
     OmniTune.h \
-    EncoderLCD.h
+    EncoderLCD.h \
+    DialController.h
 
 
 INCLUDEPATH += \
