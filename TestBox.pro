@@ -4,7 +4,8 @@ OTHER_FILES += \
 HEADERS += \
     TestBox.ino \
     GearLights.h \
-    OmniTune.h
+    OmniTune.h \
+    EncoderLCD.h
 
 
 INCLUDEPATH += \

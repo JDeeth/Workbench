@@ -3,62 +3,6 @@
 
 #define DataRefIdent PROGMEM const char
 
-
-
-///////////////////
-// Output hardware
-//
-enum LCD_PINS {
-  RS = 27,
-  RW = 0, EN, D4, D5, D6, D7,
-  BACKLIGHT = 24
-};
-
-LiquidCrystalFast lcd(RS, RW, EN, D4, D5, D6, D7);
-
-void setupOmnituneOutput() {
-  pinMode (BACKLIGHT, OUTPUT);
-  analogWrite (BACKLIGHT, 128);
-
-  lcd.begin (16, 2);
-}
-
-
-
-///////////////////
-// Input hardware
-//
-enum INPUT_PINS {
-  PIN_LEFT_ENC_A = 7,
-  PIN_LEFT_ENC_B = 8,
-  PIN_LEFT_IN = 20,
-
-  PIN_RIGHT_ENC_A = 10,
-  PIN_RIGHT_ENC_B = 9,
-  PIN_RIGHT_IN = 11
-};
-
-Bounce leftIn = Bounce (PIN_LEFT_IN, 5);
-Bounce rightIn = Bounce (PIN_RIGHT_IN, 5);
-
-Encoder leftEnc(PIN_LEFT_ENC_A, PIN_LEFT_ENC_B);
-Encoder rightEnc(PIN_RIGHT_ENC_A, PIN_RIGHT_ENC_B);
-
-const short ENC_CHANGE_PER_DETENT = 4; // may be 1, 2, or 4 depending on model
-short leftEncPrev;  // position of encoders when last inspected
-short rightEncPrev;
-
-void setupOmnituneInput () {
-  pinMode (PIN_LEFT_ENC_A, INPUT_PULLUP);
-  pinMode (PIN_LEFT_ENC_B, INPUT_PULLUP);
-  pinMode (PIN_LEFT_IN, INPUT_PULLUP);
-  pinMode (PIN_RIGHT_ENC_A, INPUT_PULLUP);
-  pinMode (PIN_RIGHT_ENC_B, INPUT_PULLUP);
-  pinMode (PIN_RIGHT_IN, INPUT_PULLUP);
-}
-
-
-
 ////////////////////////////////////////////////////////////////////////
 // Radio tuner objects
 //
@@ -94,15 +38,10 @@ void setupTunerDataref() {
 
 int tunerMode = NAV1; // indicates selected channel
 
-void tunerDisplayUpdate();
-void tunerInputUpdate(const int &modeDelta,
-                      const int &leftDelta,
-                      const int &rightDelta);
-
 ////////////////////////////////////////////////////////////////////////
-// Knob-adjusting objects
+// Dial-adjusting objects
 //
-class Knob {
+class Dial {
 public:
   FlightSimFloat dr;
   float lowLimit;
@@ -117,7 +56,7 @@ public:
     coarseToFineRatio = ratio;
     lapNotCrop = lap;
   }
-  Knob(float low, float high, float sc, float ratio, bool lap = false) {
+  Dial(float low, float high, float sc, float ratio, bool lap = false) {
     set(low, high, sc, ratio, lap);
   }
 
@@ -140,16 +79,16 @@ public:
   }
 };
 
-enum KNOB_MODES {
+enum DIAL_MODES {
   HEADING_P1, NAV1_OBS, VSI_BUG,
-  KNOB_MODE_COUNT
+  DIAL_MODE_COUNT
 };
 
-Knob headingP1 (0.0, 360.0, 0.25, 20, true);
-Knob nav1Obs (0.0, 360.0, 0.25, 20, true);
-Knob vsiBug (-6000, 6000, 100, 5);
+Dial headingP1 (0.0, 360.0, 0.25, 20, true);
+Dial nav1Obs (0.0, 360.0, 0.25, 20, true);
+Dial vsiBug (-6000, 6000, 100, 5);
 
-int knobMode = HEADING_P1;
+int dialMode = HEADING_P1;
 
 void setupKnobDataref() {
   headingP1.dr = XPlaneRef("sim/cockpit2/autopilot/heading_dial_deg_mag_pilot");
@@ -157,121 +96,31 @@ void setupKnobDataref() {
   vsiBug.dr = XPlaneRef("sim/cockpit2/autopilot/vvi_dial_fpm");
 }
 
-void knobDisplayUpdate();
-void knobInputUpdate(const int &modeDelta,
-                     const int &leftDelta,
-                     const int &rightDelta);
-
 ////////////////////////////////////////////////////////////////////////
 // Local objects
 //
-enum META_MODE {
-  TUNER, KNOB,
-  META_MODE_COUNT
-};
-
-int metaMode = 0;
-
-elapsedMicros dispTimer = 0; //to avoid updating display too frequently
-unsigned int dispPeriod = 35525; //magic number determined by experimentation
-
 
 
 void setupOmniTune() {
-  setupOmnituneInput();
-  setupOmnituneOutput();
   setupTunerDataref();
   setupKnobDataref();
 }
 
 
 
-void loopOmniTune() {
-
-  bool showDisplay = false;
-
-  if (dispTimer > dispPeriod) {
-    dispTimer = 0;
-    if (FlightSim.isEnabled()) {
-      showDisplay = true;
-      analogWrite(BACKLIGHT, 128);
-    } else {
-      lcd.clear();
-      lcd.print("OmniStuff");
-      analogWrite(BACKLIGHT, 0);
-    }
-  }
-
-
-
-
-  leftIn.update();
-  rightIn.update();
-
-
-  if ((leftIn.read() == LOW) && rightIn.fallingEdge()) {
-    ++metaMode;
-    if (metaMode >= META_MODE_COUNT)
-      metaMode = 0;
-  }
-
-  if ((rightIn.read() == LOW) && leftIn.fallingEdge()) {
-    --metaMode;
-    if (metaMode < 0)
-      metaMode = META_MODE_COUNT - 1;
-  }
-
-  short modeDelta = 0;
-  if (leftIn.risingEdge()) {
-    modeDelta = -1;
-  }
-  if (rightIn.risingEdge()) {
-    modeDelta = 1;
-  }
-
-  short leftDelta = (leftEnc.read() - leftEncPrev) / ENC_CHANGE_PER_DETENT;
-  if (leftDelta) {
-    leftEncPrev = 0;
-    leftEnc.write(0);
-  }
-
-  short rightDelta = (rightEnc.read() - rightEncPrev) / ENC_CHANGE_PER_DETENT;
-  if (rightDelta) {
-    rightEncPrev = 0;
-    rightEnc.write(0);
-  }
-
-  switch(metaMode) {
-    case TUNER:
-      tunerInputUpdate(modeDelta, leftDelta, rightDelta);
-      if(showDisplay)
-        tunerDisplayUpdate();
-      break;
-
-    case KNOB:
-      knobInputUpdate(modeDelta, leftDelta, rightDelta);
-      if(showDisplay)
-        knobDisplayUpdate();
-      break;
-  }
-}
-
-
-
-
-void knobInputUpdate(const int &modeDelta,
+void dialInputUpdate(const int &modeDelta,
                      const int &leftDelta,
                      const int &rightDelta) {
   if (modeDelta) {
-    knobMode += modeDelta;
-    if (knobMode >= KNOB_MODE_COUNT)
-      knobMode -= KNOB_MODE_COUNT;
-    if(knobMode < 0)
-      knobMode += KNOB_MODE_COUNT;
+    dialMode += modeDelta;
+    if (dialMode >= DIAL_MODE_COUNT)
+      dialMode -= DIAL_MODE_COUNT;
+    if(dialMode < 0)
+      dialMode += DIAL_MODE_COUNT;
   }
 
   if (leftDelta || rightDelta) {
-  switch(knobMode) {
+  switch(dialMode) {
     case HEADING_P1:
       headingP1.addDelta(rightDelta, leftDelta);
       break;
@@ -289,11 +138,11 @@ void knobInputUpdate(const int &modeDelta,
 
 
 
-void knobDisplayUpdate() {
+void dialDisplayUpdate() {
   lcd.clear();
   lcd.setCursor(0, 0);
 
-  switch (knobMode) {
+  switch (dialMode) {
     case HEADING_P1:
       lcd.print("Heading P1");
       lcd.setCursor(0,1);

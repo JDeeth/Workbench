@@ -24,16 +24,19 @@
 #include <Bounce.h>
 #include <Encoder.h>
 
+#include "EncoderLCD.h"
 #include "OmniTune.h"
 #include "GearLights.h"
 
 void setup() {
+  setupEncoderLCD();
   setupGearLights();
   setupOmniTune();
 }
 
 void loop() {
   FlightSim.update();
+
+  loopEncoderLCD();
   loopGearLights();
-  loopOmniTune();
-} // loop
+}
