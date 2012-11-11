@@ -29,15 +29,11 @@
 
 void setup() {
   setupGearLights();
-
   setupOmniTune();
 }
 
 void loop() {
   FlightSim.update();
-
   loopGearLights();
-
   loopOmniTune();
-
 } // loop

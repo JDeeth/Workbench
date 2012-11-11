@@ -80,8 +80,8 @@ DataRefIdent tunerDataRefIdent[][64] = {
   {"sim/cockpit2/radios/actuators/com2_frequency_hz"},
   {"sim/cockpit2/radios/actuators/adf1_frequency_hz"},
   {"sim/cockpit2/radios/actuators/adf2_frequency_hz"},
-  {"sim/cockpit2/radios/actuators/transponder_code"},
-  {"sim/cockpit/radios/transponder_mode"}
+  {"sim/cockpit/radios/transponder_mode"},
+  {"sim/cockpit2/radios/actuators/transponder_code"}
 };
 
 FlightSimInteger tunerDataRef[TUNER_MODE_COUNT];
@@ -270,6 +270,7 @@ void knobInputUpdate(const int &modeDelta,
       knobMode += KNOB_MODE_COUNT;
   }
 
+  if (leftDelta || rightDelta) {
   switch(knobMode) {
     case HEADING_P1:
       headingP1.addDelta(rightDelta, leftDelta);
@@ -281,6 +282,7 @@ void knobInputUpdate(const int &modeDelta,
       vsiBug.addDelta(rightDelta, leftDelta);
       break;
   }
+  } // if enc input
 }
 
 
